@@ -41,13 +41,11 @@ const updateClock = () => {
 
 // --- API & Data ---
 function loadStopsData() {
-    // 1. Try variable first (for local fallback)
     if (window.ALL_STOPS) {
         processStops(window.ALL_STOPS);
         return;
     }
 
-    // 2. Fetch lightweight JSON
     fetch('stops_lite.json')
         .then(res => {
             if (!res.ok) throw new Error("Lite data missing");
@@ -61,6 +59,8 @@ function loadStopsData() {
                 lat: s.l,
                 lon: s.o,
                 locality: s.c,
+                lines: s.r || [],
+                status: s.s === 1 ? 'ACTIVE' : 'INACTIVE',
                 // Add dummy fields if text search needs them avoids crashes
                 tts_name: s.n
             }));
@@ -71,20 +71,31 @@ function loadStopsData() {
         })
         .catch(e => {
             console.warn("Falling back to full stops.txt", e);
-            // Fallback to original if lite fails
             fetch('stops.txt')
                 .then(res => res.json())
                 .then(data => {
-                    allStops = data;
-                    if (typeof updateMapMarkers === 'function' && typeof map !== 'undefined' && map) {
-                        updateMapMarkers();
-                    }
+                    processStops(data);
                 });
         });
 }
 
 function processStops(data) {
-    allStops = data;
+    // Normalize data if it comes from legacy source (stops.txt or stops_data.js)
+    allStops = data.map(stop => {
+        // If already normalized (lite format), return as is (but mapped to full keys)
+        if (stop.status) return stop;
+
+        return {
+            ...stop,
+            // Map legacy fields to new standard
+            status: stop.operational_status || 'ACTIVE',
+            lines: stop.lines || [],
+            // Ensure lat/lon are numbers for map
+            lat: stop.lat,
+            lon: stop.lon
+        };
+    });
+
     if (typeof updateMapMarkers === 'function' && typeof map !== 'undefined' && map) {
         updateMapMarkers();
     }
@@ -519,21 +530,34 @@ function updateMapMarkers() {
     visibleStops.forEach(stop => {
         const marker = L.circleMarker([stop.latNum, stop.lonNum], {
             radius: 6,
-            fillColor: "#004494",
+            fillColor: stop.status === 'ACTIVE' ? "#004494" : "#94a3b8", // Grey if inactive
             color: "#ffffff",
             weight: 1,
             opacity: 1,
             fillOpacity: 0.8
         });
 
-        // Optimize Popup: use onclick to set content instead of binding massive strings
         marker.on('click', () => {
+            const linesHtml = stop.lines && stop.lines.length > 0
+                ? `<div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:8px;">
+                    ${stop.lines.map(line => `<span style="font-size:10px; background:#e2e8f0; color:#475569; padding:2px 4px; border-radius:4px; font-weight:600;">${line}</span>`).join('')}
+                   </div>`
+                : '<div style="font-size:11px; color:#94a3b8; margin-bottom:8px;">No lines available</div>';
+
+            const statusBadge = stop.status === 'ACTIVE'
+                ? '<span style="color:#16a34a; background:#dcfce7; font-size:9px; padding:1px 4px; border-radius:3px; font-weight:700; margin-left:6px;">ACTIVE</span>'
+                : '<span style="color:#dc2626; background:#fee2e2; font-size:9px; padding:1px 4px; border-radius:3px; font-weight:700; margin-left:6px;">INACTIVE</span>';
+
             L.popup()
                 .setLatLng([stop.latNum, stop.lonNum])
                 .setContent(`
-                    <div style="min-width: 150px;">
-                        <h3 style="margin:0 0 4px; font-size:14px; font-weight:700; color:#0f172a;">${stop.name}</h3>
-                        <div style="font-size:12px; color:#64748b; margin-bottom:8px;">${stop.locality || ''} (${stop.stop_id})</div>
+                    <div style="min-width: 180px;">
+                        <h3 style="margin:0 0 2px; font-size:14px; font-weight:700; color:#0f172a; display:flex; align-items:center;">
+                            ${stop.name}
+                            ${statusBadge}
+                        </h3>
+                        <div style="font-size:11px; color:#64748b; margin-bottom:8px;">${stop.locality || ''} (${stop.stop_id})</div>
+                        ${linesHtml}
                         <button onclick="window.selectStopFromMap('${stop.stop_id}', '${stop.name.replace(/'/g, "\\'")}')" 
                             style="width:100%; background:#004494; color:white; border:none; padding:8px 12px; border-radius:6px; font-weight:600; cursor:pointer;">
                             Select Stop
