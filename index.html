@@ -29,7 +29,11 @@
             <button class="quick-btn" onclick="quickSelect('172197')">Monte Abraão</button>
         </div>
         <form class="search-form" id="search-form">
-            <input type="number" id="stop-id-input" placeholder="Stop ID (e.g. 120385)" value="120385">
+            <div class="search-input-wrapper">
+                <input type="text" id="stop-id-input" placeholder="Search stop name (e.g. Marques)" value=""
+                    autocomplete="off">
+                <div id="suggestions" class="suggestions-list"></div>
+            </div>
             <button type="submit" class="search-btn">GO</button>
         </form>
     </div>
@@ -39,7 +43,7 @@
     </div>
 
     <footer>
-        <div class="header-controls" style="width: 100%; justify-content: space-between;">
+        <div class="header-controls">
             <div class="toggle-wrapper" id="view-toggle" onclick="toggleViewMode()">
                 <div class="toggle-bg"></div>
                 <div class="toggle-label label-min">MIN</div>
@@ -49,6 +53,7 @@
         </div>
     </footer>
 
+    <script src="stops_data.js"></script>
     <script src="script.js"></script>
 </body>
 

@@ -165,8 +165,61 @@ header {
     box-shadow: var(--shadow-sm);
     border: 1px solid #e2e8f0;
     margin-top: 12px;
+    position: relative;
     /* Space between buttons and form */
     animation: slide-down 0.2s ease-out;
+}
+
+/* Suggestions List */
+.suggestions-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    border: 1px solid #e2e8f0;
+    margin-top: 4px;
+    max-height: 300px;
+    overflow-y: auto;
+    z-index: 1000;
+    display: none;
+}
+
+.suggestions-list.show {
+    display: block;
+}
+
+.suggestion-item {
+    padding: 12px 16px;
+    border-bottom: 1px solid #f1f5f9;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.suggestion-item:last-child {
+    border-bottom: none;
+}
+
+.suggestion-item:hover {
+    background-color: var(--bg);
+    color: var(--primary);
+}
+
+.suggestion-name {
+    font-weight: 600;
+}
+
+.suggestion-id {
+    color: var(--text-sub);
+    font-size: 12px;
+    background: #f1f5f9;
+    padding: 2px 6px;
+    border-radius: 4px;
 }
 
 .search-form.show {
@@ -185,8 +238,13 @@ header {
     }
 }
 
-input {
+.search-input-wrapper {
     flex: 1;
+    position: relative;
+}
+
+input {
+    width: 100%;
     padding: 12px 16px;
     border: none;
     border-radius: 8px;
@@ -510,6 +568,12 @@ button.search-btn {
     display: flex;
     align-items: center;
     gap: 12px;
+}
+
+/* Specific footer override for header-controls */
+footer .header-controls {
+    width: 100%;
+    justify-content: space-between;
 }
 
 .toggle-wrapper {

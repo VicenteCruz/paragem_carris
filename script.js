@@ -1,45 +1,28 @@
 const BASE_URL = 'https://api.carrismetropolitana.pt';
+
+// --- State ---
 let currentStopId = '120385';
 let refreshInterval;
 let showAbsoluteTime = false;
 let cachedArrivals = [];
+let allStops = [];
 
-function quickSelect(id) {
-    document.getElementById('stop-id-input').value = id;
-    currentStopId = id;
-    loadData(true); // Force loading screen
-}
+const stopGroups = {
+    '172197': ['172197', '172537', '172491']
+};
 
-function toggleViewMode() {
-    showAbsoluteTime = !showAbsoluteTime;
-    const toggle = document.getElementById('view-toggle');
-    if (showAbsoluteTime) {
-        toggle.classList.add('show-time');
-    } else {
-        toggle.classList.remove('show-time');
-    }
-    // Re-render immediately with cached data
-    renderList(cachedArrivals);
-}
-
-function toggleSearch() {
-    const form = document.getElementById('search-form');
-    const btn = document.getElementById('btn-search');
-    form.classList.toggle('show');
-
-    if (form.classList.contains('show')) {
-        document.getElementById('stop-id-input').focus();
-        btn.style.backgroundColor = 'var(--primary)';
-        btn.style.color = 'white';
-        btn.style.borderColor = 'var(--primary)';
-    } else {
-        btn.style.backgroundColor = '';
-        btn.style.color = '';
-        btn.style.borderColor = '';
-    }
-}
+const searchInput = document.getElementById('stop-id-input');
+const suggestionsList = document.getElementById('suggestions');
 
 // --- Utils ---
+function debounce(func, wait) {
+    let timeout;
+    return function (...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), wait);
+    };
+}
+
 const getLineColor = (lineId) => {
     const firstDigit = lineId.charAt(0);
     switch (firstDigit) {
@@ -55,10 +38,20 @@ const updateClock = () => {
     const now = new Date();
     document.getElementById('clock').innerText = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
-setInterval(updateClock, 1000);
-updateClock();
 
-// --- API ---
+// --- API & Data ---
+function loadStopsData() {
+    if (window.ALL_STOPS) {
+        allStops = window.ALL_STOPS;
+    } else {
+        // Fallback for fetch if window variable missing
+        fetch('stops.txt')
+            .then(res => res.json())
+            .then(data => allStops = data)
+            .catch(e => console.error("Failed to load stops data", e));
+    }
+}
+
 async function fetchStopInfo(stopId) {
     const res = await fetch(`${BASE_URL}/stops/${stopId}`);
     if (!res.ok) throw new Error('Stop not found');
@@ -101,7 +94,63 @@ async function fetchRealtime(stopId) {
         .sort((a, b) => a.minutes - b.minutes);
 }
 
-// --- UI ---
+async function loadData(forceLoading = false) {
+    // Clear existing timer immediately
+    clearTimeout(refreshInterval);
+
+    try {
+        document.body.classList.add('updating');
+        const title = document.getElementById('stop-name').innerText;
+
+        // Show loading if forced or first load
+        if (forceLoading || (title === 'Carris Metropolitana' && !document.getElementById('arrivals-list'))) {
+            renderLoading();
+        }
+
+        // Determine IDs to fetch (single or group)
+        const idsToFetch = stopGroups[currentStopId] || [currentStopId];
+
+        // Fetch Stop Info (Primary)
+        const stop = await fetchStopInfo(idsToFetch[0]);
+
+        // Parallel fetch for all stops in group
+        const results = await Promise.all(idsToFetch.map(id => fetchRealtime(id)));
+
+        // Merge and Sort
+        const mergedArrivals = results.flat().sort((a, b) => a.minutes - b.minutes);
+
+        // Update Header
+        const nameEl = document.getElementById('stop-name');
+        nameEl.innerText = stop.name + (idsToFetch.length > 1 ? ' + Adjacent' : '');
+        document.getElementById('stop-details').innerText = stop.locality || stop.municipality_name;
+
+        // Check for overflow to trigger marquee
+        nameEl.classList.remove('scrolling');
+        nameEl.style.removeProperty('--scroll-dist');
+
+        const overflow = nameEl.scrollWidth - nameEl.parentElement.clientWidth;
+        if (overflow > 0) {
+            // Add buffer of 20px
+            nameEl.style.setProperty('--scroll-dist', `-${overflow + 20}px`);
+            nameEl.classList.add('scrolling');
+        }
+
+        // Update List
+        cachedArrivals = mergedArrivals;
+        renderList(cachedArrivals);
+
+    } catch (err) {
+        console.error(err);
+        if (document.getElementById('stop-name').innerText === 'Carris Metropolitana') {
+            renderError('Stop not found or API error.');
+        }
+    } finally {
+        document.body.classList.remove('updating');
+        refreshInterval = setTimeout(() => loadData(false), 15000);
+    }
+}
+
+// --- UI Rendering ---
 function renderLoading() {
     document.getElementById('content').innerHTML = `
         <div class="loading">
@@ -129,7 +178,7 @@ function renderList(arrivals) {
     const ul = document.createElement('ul');
     ul.id = 'arrivals-list';
 
-    arrivals.forEach((bus, i) => {
+    arrivals.forEach((bus) => {
         const li = document.createElement('li');
         li.className = 'arrival-item';
 
@@ -166,7 +215,7 @@ function renderList(arrivals) {
     container.innerHTML = '';
     container.appendChild(ul);
 
-    // Check overflows for marquee
+    // Marquee Logic for destinations
     requestAnimationFrame(() => {
         const dests = ul.querySelectorAll('.destination');
         dests.forEach(el => {
@@ -175,18 +224,12 @@ function renderList(arrivals) {
                 el.style.setProperty('--scroll-dist', `-${overflow + 20}px`);
                 el.classList.add('scrolling');
 
-                // Toggle animation on click
                 // Play animation once on click
                 el.onclick = (e) => {
                     e.stopPropagation();
-
-                    // Reset if already playing to restart
                     el.classList.remove('animating');
                     void el.offsetWidth; // Trigger reflow
-
                     el.classList.add('animating');
-
-                    // Remove class after animation ends
                     const remove = () => {
                         el.classList.remove('animating');
                         el.removeEventListener('animationend', remove);
@@ -198,79 +241,134 @@ function renderList(arrivals) {
     });
 }
 
-// --- Core ---
-const stopGroups = {
-    '172197': ['172197', '172537', '172491']
+function renderSuggestions(matches) {
+    if (matches.length === 0) {
+        suggestionsList.classList.remove('show');
+        return;
+    }
+
+    suggestionsList.innerHTML = matches.map(stop => `
+        <div class="suggestion-item" onclick="selectStop('${stop.stop_id}', '${stop.name.replace(/'/g, "\\'")}')">
+            <div class="suggestion-info">
+                <div class="suggestion-name">${stop.name}</div>
+                <div class="suggestion-detail" style="font-size: 11px; color:#64748b;">${stop.locality || ''}</div>
+            </div>
+            <span class="suggestion-id">${stop.stop_id}</span>
+        </div>
+    `).join('');
+
+    suggestionsList.classList.add('show');
+}
+
+// --- Interaction Functions ---
+function quickSelect(id) {
+    const stop = allStops.find(s => s.stop_id === id);
+    searchInput.value = stop ? stop.name : id;
+    currentStopId = id;
+    loadData(true);
+}
+
+window.selectStop = function (id, name) {
+    searchInput.value = name;
+    currentStopId = id;
+    suggestionsList.classList.remove('show');
+    toggleSearch();
+    loadData(true);
 };
 
-async function loadData(forceLoading = false) {
-    // Clear existing timer immediately to prevent overlap
-    clearTimeout(refreshInterval);
+function toggleViewMode() {
+    showAbsoluteTime = !showAbsoluteTime;
+    const toggle = document.getElementById('view-toggle');
+    if (showAbsoluteTime) {
+        toggle.classList.add('show-time');
+    } else {
+        toggle.classList.remove('show-time');
+    }
+    renderList(cachedArrivals);
+}
 
-    try {
-        document.body.classList.add('updating');
-        const title = document.getElementById('stop-name').innerText;
+function toggleSearch() {
+    const form = document.getElementById('search-form');
+    const btn = document.getElementById('btn-search');
+    form.classList.toggle('show');
 
-        // Show loading if forced (manual switch) or if it's the first load
-        if (forceLoading || (title === 'Carris Metropolitana' && !document.getElementById('arrivals-list'))) {
-            renderLoading();
-        }
-
-        // Determine IDs to fetch (single or group)
-        const idsToFetch = stopGroups[currentStopId] || [currentStopId];
-
-        // Fetch Stop Info (Primary)
-        const stop = await fetchStopInfo(idsToFetch[0]);
-
-        // Parallel fetch for all stops in group
-        const results = await Promise.all(idsToFetch.map(id => fetchRealtime(id)));
-
-        // Merge and Sort
-        const mergedArrivals = results.flat().sort((a, b) => a.minutes - b.minutes);
-
-        // Update Header
-        const nameEl = document.getElementById('stop-name');
-        nameEl.innerText = stop.name + (idsToFetch.length > 1 ? ' + Adjacent' : '');
-        document.getElementById('stop-details').innerText = stop.locality || stop.municipality_name;
-
-        // Check for overflow to trigger marquee
-        nameEl.classList.remove('scrolling');
-        nameEl.style.removeProperty('--scroll-dist');
-
-        const overflow = nameEl.scrollWidth - nameEl.parentElement.clientWidth;
-        if (overflow > 0) {
-            // Add a small buffer of 10px so it clears nicely
-            nameEl.style.setProperty('--scroll-dist', `-${overflow + 20}px`);
-            nameEl.classList.add('scrolling');
-        }
-
-        // Update List
-        cachedArrivals = mergedArrivals;
-        renderList(cachedArrivals);
-
-    } catch (err) {
-        console.error(err);
-        if (document.getElementById('stop-name').innerText === 'Carris Metropolitana') {
-            renderError('Stop not found or API error.');
-        }
-    } finally {
-        document.body.classList.remove('updating');
-
-        // Schedule next refresh
-        refreshInterval = setTimeout(() => loadData(false), 15000);
+    if (form.classList.contains('show')) {
+        searchInput.focus();
+        btn.style.backgroundColor = 'var(--primary)';
+        btn.style.color = 'white';
+        btn.style.borderColor = 'var(--primary)';
+    } else {
+        btn.style.backgroundColor = '';
+        btn.style.color = '';
+        btn.style.borderColor = '';
     }
 }
 
-// --- Init ---
+// --- Event Listeners ---
+searchInput.addEventListener('input', debounce((e) => {
+    const query = e.target.value.toLowerCase().trim();
+    if (query.length < 2) {
+        suggestionsList.classList.remove('show');
+        return;
+    }
+
+    if (!allStops.length) return;
+
+    const matches = allStops.filter(stop =>
+        stop.name.toLowerCase().includes(query) ||
+        stop.stop_id.includes(query) ||
+        (stop.tts_name && stop.tts_name.toLowerCase().includes(query))
+    ).slice(0, 50);
+
+    renderSuggestions(matches);
+}, 300));
+
 document.getElementById('search-form').addEventListener('submit', (e) => {
     e.preventDefault();
-    const val = document.getElementById('stop-id-input').value.trim();
-    if (val) {
+    const val = searchInput.value.trim();
+    if (!val) return;
+
+    // 1. Direct ID
+    if (/^\d{6}$/.test(val)) {
         currentStopId = val;
-        loadData();
+        loadData(true);
+        toggleSearch();
+        return;
+    }
+
+    if (!allStops.length) {
+        alert("Stop data not loaded yet. Please wait.");
+        return;
+    }
+
+    // 2. Exact match
+    const exactMatch = allStops.find(s => s.name.toLowerCase() === val.toLowerCase() || s.stop_id === val);
+    if (exactMatch) {
+        currentStopId = exactMatch.stop_id;
+        loadData(true);
+        toggleSearch();
+    } else {
+        // 3. Fuzzy fallback
+        const bestMatch = allStops.find(s => s.name.toLowerCase().includes(val.toLowerCase()));
+        if (bestMatch) {
+            currentStopId = bestMatch.stop_id;
+            searchInput.value = bestMatch.name;
+            loadData(true);
+            toggleSearch();
+        } else {
+            alert("Paragem não encontrada. Tente selecionar da lista.");
+        }
     }
 });
 
-// Start
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.search-input-wrapper')) {
+        suggestionsList.classList.remove('show');
+    }
+});
+
+// --- Initialization ---
+setInterval(updateClock, 1000);
+updateClock();
+loadStopsData();
 loadData();
-// Refresh cycle is handled inside loadData via setTimeout
