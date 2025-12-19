@@ -9,6 +9,7 @@ let allStops = [];
 let availableLines = [];
 let activeLines = new Set();
 let previousStopId = null;
+let activeBusMapId = null;
 
 const stopGroups = {
     '172197': ['172197', '172537', '172491']
@@ -139,7 +140,8 @@ async function fetchRealtime(stopId) {
             arrivalTime: `${String(arrivalDate.getHours()).padStart(2, '0')}:${String(arrivalDate.getMinutes()).padStart(2, '0')}`,
             isRealtime: !!arrival.estimated_arrival,
             color: getLineColor(arrival.line_id),
-            vehicleId: arrival.vehicle_id
+            vehicleId: arrival.vehicle_id,
+            tripId: arrival.trip_id
         };
     })
         .filter(a => a !== null && a.minutes >= -1)
@@ -212,7 +214,8 @@ async function loadData(forceLoading = false) {
         }
     } finally {
         document.body.classList.remove('updating');
-        refreshInterval = setTimeout(() => loadData(false), 15000);
+        const nextRefresh = activeBusMapId ? 5000 : 15000;
+        refreshInterval = setTimeout(() => loadData(false), nextRefresh);
     }
 }
 
@@ -237,7 +240,16 @@ function renderEmpty() {
 function renderList(arrivals) {
     const container = document.getElementById('content');
 
-    // Filter based on active lines
+    // Preserve active map DOM element
+    let preservedMapEl = null;
+    const preservedMapId = activeBusMapId; // v...ID
+
+    if (activeBusMap && activeBusMapId) {
+        // Did we have it open?
+        // activeBusMap.getContainer() is the mini-map div.
+        preservedMapEl = activeBusMap.getContainer();
+    }
+
     const filteredArrivals = arrivals.filter(bus => activeLines.has(bus.lineId));
 
     if (filteredArrivals.length === 0) {
@@ -246,6 +258,8 @@ function renderList(arrivals) {
         } else {
             renderEmpty();
         }
+        // If we filtered everything out, we close the map to avoid ghosts
+        if (activeBusMap) { activeBusMap.remove(); activeBusMap = null; activeBusMapId = null; }
         return;
     }
 
@@ -261,33 +275,58 @@ function renderList(arrivals) {
             : '';
 
         li.innerHTML = `
-            <div class="line-info">
-                <div class="line-number" style="background-color: ${bus.color}">
-                    ${bus.lineId}
-                </div>
-                <div class="destination-info">
-                    <div class="destination">${bus.destination}</div>
-                    <div>
-                        <span class="status-badge ${bus.isRealtime ? 'status-live' : 'status-est'}">
-                            ${bus.isRealtime ? 'LIVE' : 'EST'}
-                        </span>
-                        ${vehicleTag}
+            <div class="arrival-row" onclick="toggleBusMap(this, '${bus.tripId || ''}', '${bus.lineId}', '${bus.vehicleId || ''}')">
+                <div class="line-info">
+                    <div class="line-number" style="background-color: ${bus.color}">
+                        ${bus.lineId}
+                    </div>
+                    <div class="destination-info">
+                        <div class="destination">${bus.destination}</div>
+                        <div>
+                            <span class="status-badge ${bus.isRealtime ? 'status-live' : 'status-est'}">
+                                ${bus.isRealtime ? 'LIVE' : 'EST'}
+                            </span>
+                            ${vehicleTag}
+                        </div>
                     </div>
                 </div>
-            </div>
-            <div class="time-display">
-                <div class="time-val ${(!showAbsoluteTime && bus.minutes <= 0) ? 'animate-pulse' : ''}" 
-                     style="color: #ffcd00; font-size: ${showAbsoluteTime ? '16px' : '20px'}">
-                    ${showAbsoluteTime ? bus.arrivalTime : (bus.minutes <= 0 ? 'AGORA' : bus.minutes)}
+                <div class="time-display">
+                    <div class="time-val ${(!showAbsoluteTime && bus.minutes <= 0) ? 'animate-pulse' : ''}" 
+                         style="color: #ffcd00; font-size: ${showAbsoluteTime ? '16px' : '20px'}">
+                        ${showAbsoluteTime ? bus.arrivalTime : (bus.minutes <= 0 ? 'AGORA' : bus.minutes)}
+                    </div>
+                    <div class="time-unit">${showAbsoluteTime ? '' : (bus.minutes <= 0 ? '' : 'min')}</div>
                 </div>
-                <div class="time-unit">${showAbsoluteTime ? '' : (bus.minutes <= 0 ? '' : 'min')}</div>
             </div>
+            <div id="bus-map-${bus.tripId || 'unknown'}" class="bus-map-container"></div>
         `;
         ul.appendChild(li);
     });
 
     container.innerHTML = '';
     container.appendChild(ul);
+
+    // Restore active map
+    if (preservedMapEl && preservedMapId) {
+        const vehicleId = preservedMapId.substring(1);
+        const match = filteredArrivals.find(b => b.vehicleId === vehicleId || (b.vehicleId && b.vehicleId.endsWith(vehicleId)));
+
+        if (match) {
+            const mapContainer = document.getElementById(`bus-map-${match.tripId || 'unknown'}`);
+            if (mapContainer) {
+                // Re-attach the existing map element
+                mapContainer.classList.add('open');
+                mapContainer.appendChild(preservedMapEl);
+                // Important: Leaflet map needs to know it's back in the DOM and possibly resized
+                activeBusMap.invalidateSize();
+                // Update position smoothly
+                updateBusPosition(match.vehicleId, match.lineId);
+            }
+        } else {
+            // Selected bus is no longer in the list (departed or filtered)
+            if (activeBusMap) { activeBusMap.remove(); activeBusMap = null; activeBusMapId = null; }
+        }
+    }
 
     // Marquee Logic for destinations
     requestAnimationFrame(() => {
@@ -313,6 +352,95 @@ function renderList(arrivals) {
             }
         });
     });
+}
+
+// Helper: updates bus position on existing map without reloading it
+async function updateBusPosition(vehicleId, lineId) {
+    if (!activeBusMap) return;
+
+    // We can assume vehicles are cached or fetch fresh
+    const vehicles = await getVehicles();
+    const vehicle = vehicles.find(v => v.id === vehicleId) ||
+        vehicles.find(v => v.id && vehicleId.endsWith(v.id)) ||
+        vehicles.find(v => v.id && v.id.endsWith(vehicleId));
+
+    if (!vehicle) return;
+
+    // Handle View Mode (Auto-Fit vs Free Mode vs Focus Mode)
+    if (busFocusMode) {
+        // Focus Mode: Lock strictly on bus with high zoom (reduced to 17 per request)
+        // Use flyTo for smoother transition if distance is large
+        activeBusMap.flyTo([vehicle.lat, vehicle.lon], 17, { animate: true, duration: 1 });
+    } else if (!mapFreeMode) {
+        const bounds = new L.LatLngBounds();
+        bounds.extend([vehicle.lat, vehicle.lon]);
+
+        const stop = allStops.find(s => s.stop_id === currentStopId);
+        if (stop) {
+            bounds.extend([stop.lat, stop.lon]);
+            // Use fitBounds to show both
+            // Auto-refresh fits stop and bus
+            // Use fitBounds to show both
+            // Auto-refresh fits stop and bus
+            activeBusMap.fitBounds(bounds, {
+                paddingTopLeft: [10, 10],
+                paddingBottomRight: [50, 100],
+                maxZoom: 20,
+                animate: true,
+                duration: 1
+            });
+        } else {
+            // Fallback if stop not found
+            activeBusMap.flyTo([vehicle.lat, vehicle.lon], 17, { animate: true, duration: 1 });
+        }
+    }
+
+    // Update markers
+    let busMarker = null;
+    let pathLine = null;
+
+    activeBusMap.eachLayer(layer => {
+        if (layer instanceof L.Marker && layer.options.icon?.options?.className === 'bus-marker-icon') {
+            busMarker = layer;
+        }
+        if (layer instanceof L.Polyline && layer.options.dashArray) {
+            pathLine = layer;
+        }
+    });
+
+    if (busMarker) {
+        busMarker.setLatLng([vehicle.lat, vehicle.lon]);
+
+        // Update rotation
+        const bearing = vehicle.bearing || 0;
+        const color = getLineColor(lineId);
+
+        const newIcon = L.divIcon({
+            className: 'bus-marker-icon',
+            html: `
+                <div style="transform: rotate(${bearing}deg); width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;">
+                    <svg width="20" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">
+                        <path d="M12 2L4.5 20L12 17L19.5 20L12 2Z" fill="${color}" stroke="white" stroke-width="2" stroke-linejoin="round"/>
+                    </svg>
+                </div>`,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+        });
+
+        busMarker.setIcon(newIcon);
+
+        // Update popup text just in case ID format changed? probably constant.
+    }
+
+    if (pathLine) {
+        // 0 is bus, 1 is stop. Update 0.
+        const latLngs = pathLine.getLatLngs();
+        if (latLngs.length >= 2) {
+            // Keep stop position (index -1 or 1), update bus (0)
+            latLngs[0] = [vehicle.lat, vehicle.lon];
+            pathLine.setLatLngs(latLngs);
+        }
+    }
 }
 
 function renderSuggestions(matches) {
@@ -667,8 +795,251 @@ window.selectStopFromMap = function (id, name) {
     toggleMap(); // Close modal
 };
 
+// --- Bus Location Map ---
+let activeBusMap = null;
+let mapFreeMode = false;
+let busFocusMode = false;
+let vehiclesCache = null;
+let currentMapLineId = null;
+
+let lastVehiclesUpdate = 0;
+
+async function getVehicles() {
+    const now = Date.now();
+    if (vehiclesCache && (now - lastVehiclesUpdate) < 15000) return vehiclesCache;
+    try {
+        const res = await fetch('https://api.cmet.pt/vehicles');
+        if (!res.ok) throw new Error('Failed');
+        vehiclesCache = await res.json();
+        lastVehiclesUpdate = now;
+        return vehiclesCache;
+    } catch (e) {
+        console.error(e);
+        return vehiclesCache || [];
+    }
+}
+
+window.toggleBusMap = async function (el, tripId, lineId, vehicleId) {
+    if (!vehicleId || vehicleId === 'undefined') return;
+
+    currentMapLineId = lineId;
+    const uniqueId = `v${vehicleId}`;
+    const mapContainer = document.getElementById(`bus-map-${tripId || 'unknown'}`) || el.nextElementSibling;
+    if (!mapContainer?.classList.contains('bus-map-container')) return;
+
+    // Close if Open
+    if (mapContainer.classList.contains('open')) {
+        mapContainer.classList.remove('open');
+        activeBusMapId = null;
+        setTimeout(() => {
+            if (activeBusMap && activeBusMapId === uniqueId) {
+                activeBusMap.remove(); activeBusMap = null; mapContainer.innerHTML = '';
+            }
+        }, 300);
+        return;
+    }
+
+    // Close Others
+    document.querySelectorAll('.bus-map-container.open').forEach(c => {
+        c.classList.remove('open');
+        setTimeout(() => c !== mapContainer && (c.innerHTML = ''), 300);
+    });
+
+    if (activeBusMap) { activeBusMap.remove(); activeBusMap = null; }
+
+    // Init Open
+    mapContainer.classList.add('open');
+    activeBusMapId = uniqueId;
+    if (!vehiclesCache) {
+        mapContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#64748b;font-size:13px;font-weight:600;"><div class="spinner" style="width:16px;height:16px;margin:0 8px 0 0;border-width:2px;"></div>Locating...</div>';
+    }
+
+    // Find Vehicle
+    const vehicles = await getVehicles();
+    const vehicle = vehicles.find(v => v.id === vehicleId) ||
+        vehicles.find(v => v.id && vehicleId.endsWith(v.id)) ||
+        vehicles.find(v => v.id && v.id.endsWith(vehicleId));
+
+    if (!mapContainer.classList.contains('open')) return;
+
+    if (!vehicle) {
+        mapContainer.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#ef4444;font-size:13px;">Signal lost for Bus #${vehicleId.split('|')[1] || vehicleId}</div>`;
+        return;
+    }
+
+    // Render Map
+    // Removed unnecessary timeout for instant rendering
+    if (!mapContainer.classList.contains('open')) return;
+    mapContainer.innerHTML = '';
+    const mapDiv = document.createElement('div');
+    mapDiv.className = 'mini-map';
+    mapContainer.appendChild(mapDiv);
+
+    activeBusMap = L.map(mapDiv, { attributionControl: false, zoomControl: false }).setView([vehicle.lat, vehicle.lon], 15);
+    // Switch to CartoDB Light for a lighter, cleaner look and better reliability
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 20,
+        subdomains: 'abcd'
+    }).addTo(activeBusMap);
+
+    mapFreeMode = false;
+
+    const userAction = () => {
+        mapFreeMode = true;
+        if (busFocusMode) setBusFocus(false);
+        updateModeUI();
+    };
+
+    // Use DOM events to differentiate user interaction from programmatic moves
+    mapDiv.addEventListener('mousedown', userAction);
+    mapDiv.addEventListener('touchstart', userAction, { passive: true });
+    mapDiv.addEventListener('wheel', userAction, { passive: true });
+
+    // Handle Leaflet specific drag (which is user driven)
+    activeBusMap.on('dragstart', userAction);
+
+    const bounds = new L.LatLngBounds();
+    const color = getLineColor(lineId);
+
+    // Marker
+    const bearing = vehicle.bearing || 0;
+    const icon = L.divIcon({
+        className: 'bus-marker-icon',
+        html: `
+            <div style="transform: rotate(${bearing}deg); width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;">
+                <svg width="20" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">
+                    <path d="M12 2L4.5 20L12 17L19.5 20L12 2Z" fill="${color}" stroke="white" stroke-width="2" stroke-linejoin="round"/>
+                </svg>
+            </div>`,
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
+    });
+    L.marker([vehicle.lat, vehicle.lon], { icon, zIndexOffset: 1000 }).addTo(activeBusMap)
+        .bindPopup(`Bus #${vehicle.id.split('|')[1] || vehicle.id}`, { closeButton: false });
+    bounds.extend([vehicle.lat, vehicle.lon]);
+
+    // Stop & Path
+    const stop = allStops.find(s => s.stop_id === currentStopId);
+    if (stop) {
+        const stopIcon = L.divIcon({
+            className: 'stop-marker-icon',
+            html: `<div style="background-color:#0f172a; width:12px; height:12px; border-radius:50%; border:2px solid white; box-shadow:0 2px 4px rgba(0,0,0,0.2);"></div>`,
+            iconSize: [12, 12]
+        });
+        L.marker([stop.lat, stop.lon], { icon: stopIcon }).addTo(activeBusMap).bindPopup(stop.name, { closeButton: false });
+        bounds.extend([stop.lat, stop.lon]);
+
+        L.polyline([[vehicle.lat, vehicle.lon], [stop.lat, stop.lon]], {
+            color: '#64748b', weight: 2, dashArray: '5, 10', opacity: 0.5
+        }).addTo(activeBusMap);
+    }
+
+    // Add Map Controls (Leaflet Control to persist across DOM moves)
+    const MapControls = L.Control.extend({
+        options: { position: 'bottomright' },
+        onAdd: function (map) {
+            const container = L.DomUtil.create('div');
+            container.style.display = 'flex';
+            container.style.flexDirection = 'column';
+            container.style.gap = '8px';
+            container.style.pointerEvents = 'auto'; // Ensure clicks work
+
+            // Reset (Auto Fit) Button
+            const resetBtn = L.DomUtil.create('button', 'map-focus-btn', container);
+            resetBtn.id = 'auto-fit-btn';
+            resetBtn.innerHTML = `
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+                </svg>
+            `;
+            resetBtn.onclick = (e) => {
+                L.DomEvent.stopPropagation(e);
+                toggleAutoFit();
+            };
+
+            // Focus Bus Button
+            const focusBtn = L.DomUtil.create('button', 'map-focus-btn', container);
+            focusBtn.id = 'focus-bus-btn'; // ID for easier selection
+            focusBtn.innerHTML = `
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 17h2l.64-2.54c.24-.959.24-1.962 0-2.92l-1.07-4.27A2.99 2.99 0 0 0 17.66 5H6.34a2.99 2.99 0 0 0-2.91 2.27L2.36 11.54a4.99 4.99 0 0 0 0 2.92L3 17h2"></path>
+                    <path d="M14 17H9"></path>
+                    <circle cx="7" cy="17" r="2"></circle>
+                    <circle cx="17" cy="17" r="2"></circle>
+                </svg>
+            `;
+            focusBtn.onclick = (e) => {
+                L.DomEvent.stopPropagation(e);
+                toggleBusFocus();
+            };
+            return container;
+        }
+    });
+    activeBusMap.addControl(new MapControls());
+    busFocusMode = false; // Reset on open
+    mapFreeMode = false;
+    updateModeUI();
+
+
+
+    // Ensure map is correctly sized before fitting bounds
+    activeBusMap.invalidateSize();
+    activeBusMap.fitBounds(bounds, { paddingTopLeft: [10, 10], paddingBottomRight: [50, 100], maxZoom: 20 });
+
+    // Double check size after a tick to handle dynamic layout reflows
+    setTimeout(() => {
+        activeBusMap.invalidateSize();
+        activeBusMap.fitBounds(bounds, { paddingTopLeft: [10, 10], paddingBottomRight: [50, 100], maxZoom: 20 });
+    }, 250);
+};
+
 // --- Initialization ---
 setInterval(updateClock, 1000);
 updateClock();
 loadStopsData();
 loadData();
+
+
+function updateModeUI() {
+    const autoFitBtn = document.getElementById('auto-fit-btn');
+    const focusBtn = document.getElementById('focus-bus-btn');
+
+    // Auto Fit is active if NOT FreeMode and NOT FocusMode
+    const isAutoFit = !mapFreeMode && !busFocusMode;
+
+    if (autoFitBtn) {
+        if (isAutoFit) autoFitBtn.classList.add('active');
+        else autoFitBtn.classList.remove('active');
+    }
+
+    if (focusBtn) {
+        if (busFocusMode) focusBtn.classList.add('active');
+        else focusBtn.classList.remove('active');
+    }
+}
+
+function setBusFocus(active) {
+    busFocusMode = active;
+    if (active) {
+        mapFreeMode = false;
+        if (activeBusMapId) {
+            updateBusPosition(activeBusMapId.substring(1), currentMapLineId);
+        }
+    }
+    updateModeUI();
+}
+
+window.toggleAutoFit = function () {
+    // If enabling AutoFit, disable FreeMode and FocusMode
+    mapFreeMode = false;
+    busFocusMode = false;
+    updateModeUI();
+
+    if (activeBusMapId) {
+        updateBusPosition(activeBusMapId.substring(1), currentMapLineId);
+    }
+};
+
+window.toggleBusFocus = function () {
+    setBusFocus(!busFocusMode);
+};
