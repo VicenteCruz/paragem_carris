@@ -6,6 +6,9 @@ let refreshInterval;
 let showAbsoluteTime = false;
 let cachedArrivals = [];
 let allStops = [];
+let availableLines = [];
+let activeLines = new Set();
+let previousStopId = null;
 
 const stopGroups = {
     '172197': ['172197', '172537', '172491']
@@ -186,6 +189,20 @@ async function loadData(forceLoading = false) {
 
         // Update List
         cachedArrivals = mergedArrivals;
+
+        // Update Filters if stop changed
+        if (currentStopId !== previousStopId) {
+            const currentObj = allStops.find(s => s.stop_id === currentStopId);
+            const staticLines = currentObj ? currentObj.lines : [];
+            const arrivalLines = mergedArrivals.map(a => a.lineId);
+            // Combine unique lines
+            availableLines = Array.from(new Set([...staticLines, ...arrivalLines])).sort();
+            activeLines = new Set(availableLines);
+
+            renderLineFilters(availableLines);
+            previousStopId = currentStopId;
+        }
+
         renderList(cachedArrivals);
 
     } catch (err) {
@@ -219,15 +236,23 @@ function renderEmpty() {
 
 function renderList(arrivals) {
     const container = document.getElementById('content');
-    if (arrivals.length === 0) {
-        renderEmpty();
+
+    // Filter based on active lines
+    const filteredArrivals = arrivals.filter(bus => activeLines.has(bus.lineId));
+
+    if (filteredArrivals.length === 0) {
+        if (arrivals.length > 0) {
+            container.innerHTML = `<div class="empty">All lines filtered out.</div>`;
+        } else {
+            renderEmpty();
+        }
         return;
     }
 
     const ul = document.createElement('ul');
     ul.id = 'arrivals-list';
 
-    arrivals.forEach((bus) => {
+    filteredArrivals.forEach((bus) => {
         const li = document.createElement('li');
         li.className = 'arrival-item';
 
@@ -309,6 +334,67 @@ function renderSuggestions(matches) {
     suggestionsList.classList.add('show');
 }
 
+function renderLineFilters(lines) {
+    const container = document.getElementById('line-filters');
+    if (!lines || lines.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+
+    const filtersHtml = lines.map(lineId => {
+        const isActive = activeLines.has(lineId);
+        const color = getLineColor(lineId);
+        return `<div class="line-filter-badge ${isActive ? '' : 'inactive'}" 
+                     style="${isActive ? `background-color: ${color}` : ''}"
+                     onclick="toggleLineFilter('${lineId}')">
+                    ${lineId}
+                </div>`;
+    }).join('');
+
+    // Reset/Select All Button
+    const resetHtml = `
+        <div class="line-filter-badge" 
+             style="background-color: #64748b; display: flex; align-items: center; justify-content: center; width: 34px; padding: 0;"
+             title="Select All"
+             onclick="resetLineFilters()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="1 4 1 10 7 10"></polyline>
+                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+        </div>
+    `;
+
+    container.innerHTML = filtersHtml + resetHtml;
+}
+
+window.toggleLineFilter = function (lineId) {
+    // Check if we are currently in "All Selected" state
+    const isAllActive = availableLines.length > 0 && availableLines.every(id => activeLines.has(id));
+
+    if (isAllActive) {
+        // "Focus" Mode: Deselect all others, keep only the clicked one
+        activeLines.clear();
+        activeLines.add(lineId);
+    } else {
+        // Standard Multi-Select Mode
+        if (activeLines.has(lineId)) {
+            activeLines.delete(lineId);
+        } else {
+            activeLines.add(lineId);
+        }
+    }
+
+    renderLineFilters(availableLines);
+    renderList(cachedArrivals);
+};
+
+window.resetLineFilters = function () {
+    availableLines.forEach(id => activeLines.add(id));
+    renderLineFilters(availableLines);
+    renderList(cachedArrivals);
+};
+
 // --- Interaction Functions ---
 function quickSelect(id) {
     const stop = allStops.find(s => s.stop_id === id);
@@ -338,8 +424,10 @@ function toggleViewMode() {
 
 function toggleSearch() {
     const form = document.getElementById('search-form');
+    const filters = document.getElementById('line-filters');
     const btn = document.getElementById('btn-search');
     form.classList.toggle('show');
+    filters.classList.toggle('show');
 
     if (form.classList.contains('show')) {
         searchInput.focus();
@@ -540,7 +628,10 @@ function updateMapMarkers() {
         marker.on('click', () => {
             const linesHtml = stop.lines && stop.lines.length > 0
                 ? `<div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:8px;">
-                    ${stop.lines.map(line => `<span style="font-size:10px; background:#e2e8f0; color:#475569; padding:2px 4px; border-radius:4px; font-weight:600;">${line}</span>`).join('')}
+                    ${stop.lines.map(line => {
+                    const color = getLineColor(line);
+                    return `<span style="font-size:10px; background:${color}; color:white; padding:2px 4px; border-radius:4px; font-weight:700;">${line}</span>`;
+                }).join('')}
                    </div>`
                 : '<div style="font-size:11px; color:#94a3b8; margin-bottom:8px;">No lines available</div>';
 

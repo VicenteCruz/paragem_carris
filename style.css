@@ -743,3 +743,42 @@ footer {
 .map-message.visible {
     opacity: 1;
 }
+
+/* Line Filters */
+.line-filters {
+    display: none;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 0 4px;
+    animation: slide-down 0.2s ease-out;
+}
+
+.line-filters.show {
+    display: flex;
+}
+
+.line-filter-badge {
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-weight: 700;
+    font-size: 14px;
+    color: white;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    transition: all 0.2s;
+    border: 2px solid transparent;
+    opacity: 1;
+}
+
+.line-filter-badge:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
+}
+
+.line-filter-badge.inactive {
+    opacity: 0.4;
+    background-color: #cbd5e1 !important;
+    color: #64748b;
+    box-shadow: none;
+}
