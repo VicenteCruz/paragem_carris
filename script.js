@@ -7,7 +7,7 @@ let cachedArrivals = [];
 function quickSelect(id) {
     document.getElementById('stop-id-input').value = id;
     currentStopId = id;
-    loadData();
+    loadData(true); // Force loading screen
 }
 
 function toggleViewMode() {
@@ -165,6 +165,37 @@ function renderList(arrivals) {
 
     container.innerHTML = '';
     container.appendChild(ul);
+
+    // Check overflows for marquee
+    requestAnimationFrame(() => {
+        const dests = ul.querySelectorAll('.destination');
+        dests.forEach(el => {
+            const overflow = el.scrollWidth - el.parentElement.clientWidth;
+            if (overflow > 0) {
+                el.style.setProperty('--scroll-dist', `-${overflow + 20}px`);
+                el.classList.add('scrolling');
+
+                // Toggle animation on click
+                // Play animation once on click
+                el.onclick = (e) => {
+                    e.stopPropagation();
+
+                    // Reset if already playing to restart
+                    el.classList.remove('animating');
+                    void el.offsetWidth; // Trigger reflow
+
+                    el.classList.add('animating');
+
+                    // Remove class after animation ends
+                    const remove = () => {
+                        el.classList.remove('animating');
+                        el.removeEventListener('animationend', remove);
+                    };
+                    el.addEventListener('animationend', remove);
+                };
+            }
+        });
+    });
 }
 
 // --- Core ---
@@ -172,13 +203,16 @@ const stopGroups = {
     '172197': ['172197', '172537', '172491']
 };
 
-async function loadData() {
+async function loadData(forceLoading = false) {
+    // Clear existing timer immediately to prevent overlap
+    clearTimeout(refreshInterval);
+
     try {
         document.body.classList.add('updating');
         const title = document.getElementById('stop-name').innerText;
 
-        // Only show full page loader if we don't have data yet (first load)
-        if (title === 'Carris Metropolitana' && !document.getElementById('arrivals-list')) {
+        // Show loading if forced (manual switch) or if it's the first load
+        if (forceLoading || (title === 'Carris Metropolitana' && !document.getElementById('arrivals-list'))) {
             renderLoading();
         }
 
@@ -195,8 +229,20 @@ async function loadData() {
         const mergedArrivals = results.flat().sort((a, b) => a.minutes - b.minutes);
 
         // Update Header
-        document.getElementById('stop-name').innerText = stop.name + (idsToFetch.length > 1 ? ' + Adjacent' : '');
+        const nameEl = document.getElementById('stop-name');
+        nameEl.innerText = stop.name + (idsToFetch.length > 1 ? ' + Adjacent' : '');
         document.getElementById('stop-details').innerText = stop.locality || stop.municipality_name;
+
+        // Check for overflow to trigger marquee
+        nameEl.classList.remove('scrolling');
+        nameEl.style.removeProperty('--scroll-dist');
+
+        const overflow = nameEl.scrollWidth - nameEl.parentElement.clientWidth;
+        if (overflow > 0) {
+            // Add a small buffer of 10px so it clears nicely
+            nameEl.style.setProperty('--scroll-dist', `-${overflow + 20}px`);
+            nameEl.classList.add('scrolling');
+        }
 
         // Update List
         cachedArrivals = mergedArrivals;
@@ -210,9 +256,8 @@ async function loadData() {
     } finally {
         document.body.classList.remove('updating');
 
-        // Schedule next refresh in 15 seconds
-        clearTimeout(refreshInterval);
-        refreshInterval = setTimeout(loadData, 15000);
+        // Schedule next refresh
+        refreshInterval = setTimeout(() => loadData(false), 15000);
     }
 }
 
