@@ -3,7 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Carris Met. Mobile</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
@@ -26,6 +27,20 @@
             background-color: var(--bg);
             color: var(--text-main);
             -webkit-tap-highlight-color: transparent;
+            min-height: 100vh;
+            /* Safe area support for notched phones */
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+            padding-left: env(safe-area-inset-left);
+            padding-right: env(safe-area-inset-right);
+            box-sizing: border-box;
+        }
+
+        /* Universal Box Sizing */
+        *,
+        *::before,
+        *::after {
+            box-sizing: inherit;
         }
 
         /* Header */
@@ -34,7 +49,7 @@
             background-color: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(8px);
             border-bottom: 1px solid #e2e8f0;
-            padding: 16px 20px;
+            padding: 12px 16px;
             position: sticky;
             top: 0;
             z-index: 100;
@@ -42,13 +57,16 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 12px;
         }
 
         .header-title {
             display: flex;
             align-items: center;
             gap: 10px;
-            overflow: hidden;
+            flex: 1;
+            min-width: 0;
+            /* Enable flex shrinking */
         }
 
         .bus-badge {
@@ -61,15 +79,24 @@
             border-radius: 2px;
         }
 
+        .stop-info {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            /* Critical for truncation in flex items */
+            flex: 1;
+        }
+
         .stop-info h1 {
             margin: 0;
-            font-size: 16px;
+            font-size: 15px;
             font-weight: 800;
             color: var(--primary);
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
             text-transform: uppercase;
+            line-height: 1.2;
         }
 
         .stop-info p {
@@ -102,13 +129,32 @@
         }
 
         .search-form {
-            display: flex;
+            display: none;
             gap: 12px;
             background: white;
             padding: 4px;
             border-radius: var(--radius);
             box-shadow: var(--shadow-sm);
             border: 1px solid #e2e8f0;
+            margin-top: 12px;
+            /* Space between buttons and form */
+            animation: slide-down 0.2s ease-out;
+        }
+
+        .search-form.show {
+            display: flex;
+        }
+
+        @keyframes slide-down {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         input {
@@ -138,7 +184,7 @@
         .quick-actions {
             display: flex;
             gap: 8px;
-            margin-top: 12px;
+            margin-top: 0;
             overflow-x: auto;
             padding-bottom: 4px;
             /* Space for scrollbar if needed */
@@ -173,7 +219,8 @@
             padding: 0 16px;
             margin: 0 auto;
             max-width: 600px;
-            padding-bottom: 40px;
+            /* Padding bottom = Footer height + safe area + extra spacing */
+            padding-bottom: calc(80px + env(safe-area-inset-bottom));
             display: flex;
             flex-direction: column;
             gap: 12px;
@@ -189,6 +236,57 @@
             align-items: center;
             border: 1px solid #f1f5f9;
             transition: transform 0.2s;
+        }
+
+        /* Mobile Optimization Media Queries */
+        @media (max-width: 380px) {
+            .header-title {
+                gap: 6px;
+            }
+
+            .bus-badge {
+                font-size: 9px;
+                padding: 1px 3px;
+            }
+
+            .stop-info h1 {
+                font-size: 14px;
+            }
+
+            .search-container,
+            #arrivals-list {
+                padding: 12px;
+            }
+
+            .arrival-item {
+                padding: 12px;
+            }
+
+            .line-number {
+                width: 44px;
+                height: 40px;
+                font-size: 16px;
+            }
+
+            .time-display {
+                min-width: 48px;
+                height: 48px;
+                margin-left: 10px;
+            }
+
+            .time-val {
+                font-size: 18px !important;
+            }
+
+            /* Force override toggles */
+            .destination {
+                font-size: 13px;
+            }
+
+            .toggle-wrapper {
+                transform: scale(0.9);
+                transform-origin: right;
+            }
         }
 
         .arrival-item:active {
@@ -404,6 +502,24 @@
         .toggle-wrapper:not(.show-time) .label-min {
             color: var(--primary);
         }
+
+        /* Footer Controls */
+        footer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(12px);
+            border-top: 1px solid #e2e8f0;
+            padding: 12px 20px;
+            padding-bottom: calc(12px + env(safe-area-inset-bottom));
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 200;
+            box-shadow: 0 -4px 6px -1px rgb(0 0 0 / 0.05);
+        }
     </style>
 </head>
 
@@ -417,7 +533,26 @@
                 <p id="stop-details">Mobile View</p>
             </div>
         </div>
-        <div class="header-controls">
+    </header>
+
+    <div class="search-container">
+        <div class="quick-actions">
+            <button class="quick-btn" id="btn-search" onclick="toggleSearch()">🔍 Pesquisa</button>
+            <button class="quick-btn" onclick="quickSelect('120385')">Queluz de Baixo</button>
+            <button class="quick-btn" onclick="quickSelect('172197')">Monte Abraão</button>
+        </div>
+        <form class="search-form" id="search-form">
+            <input type="number" id="stop-id-input" placeholder="Stop ID (e.g. 120385)" value="120385">
+            <button type="submit" class="search-btn">GO</button>
+        </form>
+    </div>
+
+    <div id="content">
+        <!-- Content injected here -->
+    </div>
+
+    <footer>
+        <div class="header-controls" style="width: 100%; justify-content: space-between;">
             <div class="toggle-wrapper" id="view-toggle" onclick="toggleViewMode()">
                 <div class="toggle-bg"></div>
                 <div class="toggle-label label-min">MIN</div>
@@ -425,22 +560,7 @@
             </div>
             <div class="clock" id="clock">00:00</div>
         </div>
-    </header>
-
-    <div class="search-container">
-        <form class="search-form" id="search-form">
-            <input type="number" id="stop-id-input" placeholder="Stop ID (e.g. 120385)" value="120385">
-            <button type="submit" class="search-btn">GO</button>
-        </form>
-        <div class="quick-actions">
-            <button class="quick-btn" onclick="quickSelect('120385')">Queluz de Baixo</button>
-            <button class="quick-btn" onclick="quickSelect('172197')">Monte Abraão</button>
-        </div>
-    </div>
-
-    <div id="content">
-        <!-- Content injected here -->
-    </div>
+    </footer>
 
     <script>
         const BASE_URL = 'https://api.carrismetropolitana.pt';
@@ -465,6 +585,23 @@
             }
             // Re-render immediately with cached data
             renderList(cachedArrivals);
+        }
+
+        function toggleSearch() {
+            const form = document.getElementById('search-form');
+            const btn = document.getElementById('btn-search');
+            form.classList.toggle('show');
+
+            if (form.classList.contains('show')) {
+                document.getElementById('stop-id-input').focus();
+                btn.style.backgroundColor = 'var(--primary)';
+                btn.style.color = 'white';
+                btn.style.borderColor = 'var(--primary)';
+            } else {
+                btn.style.backgroundColor = '';
+                btn.style.color = '';
+                btn.style.borderColor = '';
+            }
         }
 
         // --- Utils ---
