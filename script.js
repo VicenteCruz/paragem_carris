@@ -41,22 +41,52 @@ const updateClock = () => {
 
 // --- API & Data ---
 function loadStopsData() {
+    // 1. Try variable first (for local fallback)
     if (window.ALL_STOPS) {
-        allStops = window.ALL_STOPS;
-        if (typeof updateMapMarkers === 'function' && typeof map !== 'undefined' && map) {
-            updateMapMarkers();
-        }
-    } else {
-        // Fallback for fetch if window variable missing
-        fetch('stops.txt')
-            .then(res => res.json())
-            .then(data => {
-                allStops = data;
-                if (typeof updateMapMarkers === 'function' && typeof map !== 'undefined' && map) {
-                    updateMapMarkers();
-                }
-            })
-            .catch(e => console.error("Failed to load stops data", e));
+        processStops(window.ALL_STOPS);
+        return;
+    }
+
+    // 2. Fetch lightweight JSON
+    fetch('stops_lite.json')
+        .then(res => {
+            if (!res.ok) throw new Error("Lite data missing");
+            return res.json();
+        })
+        .then(data => {
+            // Map short keys back to standard format for the app
+            allStops = data.map(s => ({
+                stop_id: s.i,
+                name: s.n,
+                lat: s.l,
+                lon: s.o,
+                locality: s.c,
+                // Add dummy fields if text search needs them avoids crashes
+                tts_name: s.n
+            }));
+
+            if (typeof updateMapMarkers === 'function' && typeof map !== 'undefined' && map) {
+                updateMapMarkers();
+            }
+        })
+        .catch(e => {
+            console.warn("Falling back to full stops.txt", e);
+            // Fallback to original if lite fails
+            fetch('stops.txt')
+                .then(res => res.json())
+                .then(data => {
+                    allStops = data;
+                    if (typeof updateMapMarkers === 'function' && typeof map !== 'undefined' && map) {
+                        updateMapMarkers();
+                    }
+                });
+        });
+}
+
+function processStops(data) {
+    allStops = data;
+    if (typeof updateMapMarkers === 'function' && typeof map !== 'undefined' && map) {
+        updateMapMarkers();
     }
 }
 
