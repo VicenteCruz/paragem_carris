@@ -5,18 +5,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Carris Met. Mobile</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
             --primary: #004494;
             --accent: #ffcd00;
-            --bg: #f3f4f6;
+            --bg: #f1f5f9;
             --card-bg: #ffffff;
-            --text-main: #1f2937;
-            --text-sub: #6b7280;
+            --text-main: #0f172a;
+            --text-sub: #64748b;
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            --radius: 12px;
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-family: 'Inter', -apple-system, sans-serif;
             margin: 0;
             padding: 0;
             background-color: var(--bg);
@@ -25,14 +29,16 @@
         }
 
         /* Header */
+        /* Header */
         header {
-            background-color: var(--card-bg);
-            border-bottom: 4px solid #6f2282;
-            padding: 12px 16px;
+            background-color: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(8px);
+            border-bottom: 1px solid #e2e8f0;
+            padding: 16px 20px;
             position: sticky;
             top: 0;
             z-index: 100;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            box-shadow: var(--shadow-sm);
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -87,30 +93,36 @@
         }
 
         /* Search */
+        /* Search */
         .search-container {
-            padding: 12px 16px;
-            background-color: white;
-            border-bottom: 1px solid #e5e7eb;
+            padding: 16px 20px;
+            background-color: transparent;
+            max-width: 600px;
+            margin: 0 auto;
         }
 
         .search-form {
             display: flex;
-            gap: 8px;
+            gap: 12px;
+            background: white;
+            padding: 4px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-sm);
+            border: 1px solid #e2e8f0;
         }
 
         input {
             flex: 1;
-            padding: 10px;
-            border: 1px solid #d1d5db;
+            padding: 12px 16px;
+            border: none;
             border-radius: 8px;
             font-size: 16px;
-            /* Prevents zoom on iOS */
             outline: none;
+            font-family: inherit;
         }
 
         input:focus {
-            border-color: var(--primary);
-            box-shadow: 0 0 0 2px rgba(0, 68, 148, 0.1);
+            box-shadow: none;
         }
 
         button.search-btn {
@@ -133,43 +145,59 @@
         }
 
         .quick-btn {
-            background-color: #e5e7eb;
-            color: #374151;
-            border: none;
-            padding: 8px 12px;
-            border-radius: 20px;
-            font-size: 12px;
+            background-color: white;
+            color: var(--text-sub);
+            border: 1px solid #e2e8f0;
+            padding: 8px 16px;
+            border-radius: 999px;
+            font-size: 13px;
             font-weight: 600;
             white-space: nowrap;
             cursor: pointer;
-            transition: background-color 0.2s;
+            transition: all 0.2s;
+            box-shadow: var(--shadow-sm);
         }
 
         .quick-btn:active,
         .quick-btn:hover {
-            background-color: #d1d5db;
-            color: black;
+            background-color: white;
+            border-color: var(--primary);
+            color: var(--primary);
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-md);
         }
 
         /* List */
         #arrivals-list {
             list-style: none;
-            padding: 0;
-            margin: 0;
+            padding: 0 16px;
+            margin: 0 auto;
+            max-width: 600px;
             padding-bottom: 40px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
         }
 
         .arrival-item {
             background-color: var(--card-bg);
-            margin-bottom: 1px;
-            padding: 12px 16px;
+            padding: 16px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-sm);
             display: flex;
             justify-content: space-between;
             align-items: center;
+            border: 1px solid #f1f5f9;
+            transition: transform 0.2s;
         }
 
+        .arrival-item:active {
+            transform: scale(0.98);
+        }
+
+        /* Remove default even child striping since we use cards now */
         .arrival-item:nth-child(even) {
-            background-color: #f9fafb;
+            background-color: var(--card-bg);
         }
 
         .line-info {
@@ -181,16 +209,17 @@
         }
 
         .line-number {
-            width: 50px;
-            height: 36px;
-            border-radius: 6px;
+            width: 54px;
+            height: 48px;
+            border-radius: 10px;
             display: flex;
             justify-content: center;
             align-items: center;
             color: white;
             font-weight: 800;
-            font-size: 16px;
+            font-size: 18px;
             flex-shrink: 0;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
 
         .destination-info {
@@ -220,6 +249,7 @@
         .status-live {
             background-color: #dcfce7;
             color: #15803d;
+            animation: pulse-opacity 6s infinite ease-in-out;
         }
 
         .status-est {
@@ -240,18 +270,23 @@
         }
 
         .time-display {
-            background-color: black;
-            width: 50px;
-            height: 50px;
-            border-radius: 8px;
+            background-color: #0f172a;
+            min-width: 56px;
+            padding: 0 8px;
+            height: 56px;
+            border-radius: 12px;
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
             color: var(--accent);
-            border: 1px solid #374151;
-            margin-left: 12px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border: 1px solid #1e293b;
+            margin-left: 16px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+
+        .animate-pulse {
+            animation: pulse-opacity 1s infinite;
         }
 
         .time-val {
@@ -294,6 +329,81 @@
                 transform: rotate(360deg);
             }
         }
+
+        @keyframes pulse-opacity {
+            0% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+
+        .updating .bus-badge {
+            animation: pulse-opacity 1s infinite;
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        /* Toggle Switch */
+        .header-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .toggle-wrapper {
+            display: flex;
+            align-items: center;
+            background: #e2e8f0;
+            border-radius: 20px;
+            padding: 2px;
+            position: relative;
+            cursor: pointer;
+            width: 64px;
+            height: 28px;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.06);
+        }
+
+        .toggle-bg {
+            position: absolute;
+            left: 2px;
+            top: 2px;
+            width: 30px;
+            height: 24px;
+            background: white;
+            border-radius: 16px;
+            transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+        }
+
+        .toggle-wrapper.show-time .toggle-bg {
+            transform: translateX(30px);
+        }
+
+        .toggle-label {
+            flex: 1;
+            text-align: center;
+            font-size: 10px;
+            font-weight: 700;
+            color: #64748b;
+            z-index: 1;
+            line-height: 24px;
+            user-select: none;
+        }
+
+        .toggle-wrapper.show-time .label-time {
+            color: var(--primary);
+        }
+
+        .toggle-wrapper:not(.show-time) .label-min {
+            color: var(--primary);
+        }
     </style>
 </head>
 
@@ -307,7 +417,14 @@
                 <p id="stop-details">Mobile View</p>
             </div>
         </div>
-        <div class="clock" id="clock">00:00</div>
+        <div class="header-controls">
+            <div class="toggle-wrapper" id="view-toggle" onclick="toggleViewMode()">
+                <div class="toggle-bg"></div>
+                <div class="toggle-label label-min">MIN</div>
+                <div class="toggle-label label-time">HR</div>
+            </div>
+            <div class="clock" id="clock">00:00</div>
+        </div>
     </header>
 
     <div class="search-container">
@@ -329,11 +446,25 @@
         const BASE_URL = 'https://api.carrismetropolitana.pt';
         let currentStopId = '120385';
         let refreshInterval;
+        let showAbsoluteTime = false;
+        let cachedArrivals = [];
 
         function quickSelect(id) {
             document.getElementById('stop-id-input').value = id;
             currentStopId = id;
             loadData();
+        }
+
+        function toggleViewMode() {
+            showAbsoluteTime = !showAbsoluteTime;
+            const toggle = document.getElementById('view-toggle');
+            if (showAbsoluteTime) {
+                toggle.classList.add('show-time');
+            } else {
+                toggle.classList.remove('show-time');
+            }
+            // Re-render immediately with cached data
+            renderList(cachedArrivals);
         }
 
         // --- Utils ---
@@ -388,6 +519,7 @@
                     lineId: arrival.line_id,
                     destination: arrival.headsign,
                     minutes: minutes,
+                    arrivalTime: `${String(arrivalDate.getHours()).padStart(2, '0')}:${String(arrivalDate.getMinutes()).padStart(2, '0')}`,
                     isRealtime: !!arrival.estimated_arrival,
                     color: getLineColor(arrival.line_id),
                     vehicleId: arrival.vehicle_id
@@ -449,10 +581,11 @@
                         </div>
                     </div>
                     <div class="time-display">
-                        <div class="time-val ${bus.minutes <= 0 ? 'animate-pulse' : ''}" style="color: ${bus.minutes <= 0 ? '#ef4444' : '#ffcd00'}">
-                            ${bus.minutes <= 0 ? 'NOW' : bus.minutes}
+                        <div class="time-val ${(!showAbsoluteTime && bus.minutes <= 0) ? 'animate-pulse' : ''}" 
+                             style="color: #ffcd00; font-size: ${showAbsoluteTime ? '16px' : '20px'}">
+                            ${showAbsoluteTime ? bus.arrivalTime : (bus.minutes <= 0 ? 'AGORA' : bus.minutes)}
                         </div>
-                        <div class="time-unit">${bus.minutes <= 0 ? '' : 'min'}</div>
+                        <div class="time-unit">${showAbsoluteTime ? '' : (bus.minutes <= 0 ? '' : 'min')}</div>
                     </div>
                 `;
                 ul.appendChild(li);
@@ -469,8 +602,11 @@
 
         async function loadData() {
             try {
+                document.body.classList.add('updating');
                 const title = document.getElementById('stop-name').innerText;
-                if (title === 'Carris Metropolitana') {
+
+                // Only show full page loader if we don't have data yet (first load)
+                if (title === 'Carris Metropolitana' && !document.getElementById('arrivals-list')) {
                     renderLoading();
                 }
 
@@ -491,13 +627,20 @@
                 document.getElementById('stop-details').innerText = stop.locality || stop.municipality_name;
 
                 // Update List
-                renderList(mergedArrivals);
+                cachedArrivals = mergedArrivals;
+                renderList(cachedArrivals);
 
             } catch (err) {
                 console.error(err);
                 if (document.getElementById('stop-name').innerText === 'Carris Metropolitana') {
                     renderError('Stop not found or API error.');
                 }
+            } finally {
+                document.body.classList.remove('updating');
+
+                // Schedule next refresh in 15 seconds
+                clearTimeout(refreshInterval);
+                refreshInterval = setTimeout(loadData, 15000);
             }
         }
 
@@ -513,7 +656,7 @@
 
         // Start
         loadData();
-        refreshInterval = setInterval(loadData, 15000); // 15s refresh
+        // Refresh cycle is handled inside loadData via setTimeout
 
     </script>
 </body>
