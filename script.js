@@ -383,7 +383,7 @@ async function updateBusPosition(vehicleId, lineId) {
             // Use fitBounds to show both
             // Auto-refresh fits stop and bus
             activeBusMap.fitBounds(bounds, {
-                paddingTopLeft: [10, 10],
+                paddingTopLeft: [0, 0],
                 paddingBottomRight: [50, 100],
                 maxZoom: 20,
                 animate: true,
@@ -800,6 +800,8 @@ let activeBusMap = null;
 let mapFreeMode = false;
 let busFocusMode = false;
 let vehiclesCache = null;
+let shapesCache = new Map();
+let patternsCache = new Map();
 let currentMapLineId = null;
 
 let lastVehiclesUpdate = 0;
@@ -817,6 +819,37 @@ async function getVehicles() {
         console.error(e);
         return vehiclesCache || [];
     }
+}
+
+async function getPattern(patternId) {
+    if (!patternId) return null;
+    if (patternsCache.has(patternId)) return patternsCache.get(patternId);
+
+    try {
+        // User example logic
+        const res = await fetch(`https://api.cmet.pt/patterns/${patternId}`);
+        if (!res.ok) return null;
+        let data = await res.json();
+        if (Array.isArray(data)) data = data[0];
+        patternsCache.set(patternId, data);
+        return data;
+    } catch (e) { return null; }
+}
+
+async function getShape(shapeId) {
+    if (!shapeId) return null;
+    if (shapesCache.has(shapeId)) return shapesCache.get(shapeId);
+
+    try {
+        const res = await fetch(`https://api.cmet.pt/shapes/${shapeId}`);
+        if (!res.ok) return null;
+        const data = await res.json();
+        const geojson = data.geojson;
+        if (geojson) {
+            shapesCache.set(shapeId, geojson);
+            return geojson;
+        }
+    } catch (e) { return null; }
 }
 
 window.toggleBusMap = async function (el, tripId, lineId, vehicleId) {
@@ -929,9 +962,54 @@ window.toggleBusMap = async function (el, tripId, lineId, vehicleId) {
         L.marker([stop.lat, stop.lon], { icon: stopIcon }).addTo(activeBusMap).bindPopup(stop.name, { closeButton: false });
         bounds.extend([stop.lat, stop.lon]);
 
-        L.polyline([[vehicle.lat, vehicle.lon], [stop.lat, stop.lon]], {
-            color: '#64748b', weight: 2, dashArray: '5, 10', opacity: 0.5
-        }).addTo(activeBusMap);
+        // Draw Shape & Calculate Stops Info
+        let stopsInfo = '';
+        if (vehicle.pattern_id) {
+            const pattern = await getPattern(vehicle.pattern_id);
+            if (pattern) {
+                // GeoJSON Shape
+                if (pattern.shape_id) {
+                    const geojson = await getShape(pattern.shape_id);
+                    if (geojson) {
+                        L.geoJSON(geojson, {
+                            style: { color: color, weight: 4, opacity: 0.6, lineCap: 'round', lineJoin: 'round' }
+                        }).addTo(activeBusMap);
+                        // We do not fit bounds to shape, only bus+stop
+                    }
+                }
+
+                // Calculate Stops Away (Optional but nice)
+                if (pattern.path && vehicle.current_stop_sequence) {
+                    const stopNode = pattern.path.find(p => p.stop_id === currentStopId);
+                    if (stopNode) {
+                        const stopsAway = stopNode.stop_sequence - vehicle.current_stop_sequence;
+                        if (stopsAway >= 0) {
+                            stopsInfo = `<div style="margin-top:4px; font-weight:700; color:${color}">${stopsAway} stops away</div>`;
+                        } else {
+                            stopsInfo = `<div style="margin-top:4px; font-weight:700; color:#ef4444">Vehicle passed</div>`;
+                        }
+                    }
+                }
+            }
+        } else {
+            // Fallback if no pattern
+            L.polyline([[vehicle.lat, vehicle.lon], [stop.lat, stop.lon]], {
+                color: '#64748b', weight: 2, dashArray: '5, 10', opacity: 0.5
+            }).addTo(activeBusMap);
+        }
+
+        // Update User Interface regarding stops (update default marker popup)
+        activeBusMap.eachLayer(l => {
+            if (l instanceof L.Marker && l.options.icon && l.options.icon.options.className === 'bus-marker-icon') {
+                const idText = vehicle.id.split('|')[1] || vehicle.id;
+                l.setPopupContent(`
+                    <div style="text-align:center;">
+                        <b>Bus #${idText}</b>
+                        ${stopsInfo}
+                    </div>
+                 `);
+            }
+        });
     }
 
     // Add Map Controls (Leaflet Control to persist across DOM moves)
@@ -989,7 +1067,7 @@ window.toggleBusMap = async function (el, tripId, lineId, vehicleId) {
     // Double check size after a tick to handle dynamic layout reflows
     setTimeout(() => {
         activeBusMap.invalidateSize();
-        activeBusMap.fitBounds(bounds, { paddingTopLeft: [10, 10], paddingBottomRight: [50, 100], maxZoom: 20 });
+        activeBusMap.fitBounds(bounds, { paddingTopLeft: [0, 0], paddingBottomRight: [0, 0], maxZoom: 20 });
     }, 250);
 };
 
