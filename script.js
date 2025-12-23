@@ -429,7 +429,24 @@ async function updateBusPosition(vehicleId, lineId) {
 
         busMarker.setIcon(newIcon);
 
-        // Update popup text just in case ID format changed? probably constant.
+        // Update popup info with stops away
+        if (vehicle.pattern_id && patternsCache.has(vehicle.pattern_id) && vehicle.current_stop_sequence) {
+            const pattern = patternsCache.get(vehicle.pattern_id);
+            let stopsInfo = '';
+            if (pattern && pattern.path) {
+                const stopNode = pattern.path.find(p => p.stop_id === currentStopId);
+                if (stopNode) {
+                    const stopsAway = stopNode.stop_sequence - vehicle.current_stop_sequence;
+                    stopsInfo = stopsAway >= 0
+                        ? `<div style="margin-top:4px; font-weight:700; color:${color}">${stopsAway} stops away</div>`
+                        : `<div style="margin-top:4px; font-weight:700; color:#ef4444">Vehicle passed</div>`;
+                }
+            }
+            busMarker.setPopupContent(getPopupHtml(vehicle, stopsInfo));
+        } else {
+            // Basic update if pattern not ready
+            busMarker.setPopupContent(getPopupHtml(vehicle, ''));
+        }
     }
 
     if (pathLine) {
@@ -821,6 +838,36 @@ async function getVehicles() {
     }
 }
 
+function getPopupHtml(vehicle, stopsInfo) {
+    const id = vehicle.id.split('|')[1] || vehicle.id;
+    const speed = (vehicle.speed !== undefined) ? Math.round(vehicle.speed * 3.6) + ' km/h' : '-';
+    let status = 'Moving';
+    if (vehicle.current_status === 'STOPPED_AT') status = 'Stopped';
+    if (vehicle.current_status === 'IN_TRANSIT_TO') status = 'In Transit';
+
+    let timeText = 'Just now';
+    if (vehicle.timestamp) {
+        const diff = Math.floor(Date.now() / 1000 - vehicle.timestamp);
+        if (diff > 60) timeText = Math.floor(diff / 60) + 'm ago';
+        else if (diff > 0) timeText = diff + 's ago';
+    }
+
+    return `
+        <div style="min-width:140px; font-size:12px; line-height:1.4;">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:4px;">
+                <b style="font-size:14px;">Bus #${id}</b>
+                 <span style="font-size:10px; background:#f1f5f9; padding:1px 4px; border-radius:4px; color:#475569;">${status}</span>
+            </div>
+            ${stopsInfo || ''}
+            <div style="display:grid; grid-template-columns: auto auto; gap:2px 8px; margin-top:4px; color:#64748b;">
+                <span>Speed:</span> <b style="color:#0f172a;">${speed}</b>
+                <span>Updated:</span> <b style="color:#0f172a;">${timeText}</b>
+                <span>Trip:</span> <span style="font-family:monospace;">${vehicle.trip_id ? vehicle.trip_id.split('_').pop() : '-'}</span>
+            </div>
+        </div>
+    `;
+}
+
 async function getPattern(patternId) {
     if (!patternId) return null;
     if (patternsCache.has(patternId)) return patternsCache.get(patternId);
@@ -1001,13 +1048,7 @@ window.toggleBusMap = async function (el, tripId, lineId, vehicleId) {
         // Update User Interface regarding stops (update default marker popup)
         activeBusMap.eachLayer(l => {
             if (l instanceof L.Marker && l.options.icon && l.options.icon.options.className === 'bus-marker-icon') {
-                const idText = vehicle.id.split('|')[1] || vehicle.id;
-                l.setPopupContent(`
-                    <div style="text-align:center;">
-                        <b>Bus #${idText}</b>
-                        ${stopsInfo}
-                    </div>
-                 `);
+                l.setPopupContent(getPopupHtml(vehicle, stopsInfo));
             }
         });
     }
